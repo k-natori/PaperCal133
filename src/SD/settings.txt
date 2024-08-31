@@ -1,0 +1,7 @@
+SSID:WIFI_SSID
+PASS:WIFI_PASSWORD
+pemFileName:/google-com.pem
+iCalendarURL:YOUR_ICAL_URL
+holidayURL:YOUR_ICAL_URL_FOR_HOLIDAYS
+timezone:9.0
+// END
