@@ -241,10 +241,13 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
                 String line = stream->readStringUntil('\n');
                 if (chunked)
                 {
+                    if (line.length() == 0 || line == "\r") {
+                        continue;
+                    }
                     if (isChunkSizeLine)
                     {
                         chunkSize = intFrom16BaseString(line);
-                        Serial.printf("new chunk: %ld\n", chunkSize);
+                        // Serial.printf("new chunk: %ld\n", chunkSize);
                         isChunkSizeLine = false;
                         isTrailingLine = true;
                         continue;
