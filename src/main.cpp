@@ -43,11 +43,13 @@
 
 #define uS_TO_S_FACTOR 1000000ULL
 
+#define prefName "PaperCal"
 #define holidayCacheKey "Holiday"
+#define bootCountKey "Boot"
 
-#define LOG_ENABLE true
+#define EPD_ENABLE true
+#define LOG_ENABLE false
 #define LOG_VOLTAGE false
-#define LOG_HOLIDAY true
 #define LOG_HEAP true
 
 String pemFileName = "/root_ca.pem";
@@ -66,17 +68,12 @@ String dateString = "";
 
 Preferences pref;
 String holidayCacheString;
-
-std::multimap<int, PCEvent> eventsInThisMonth;
-std::multimap<int, PCEvent> holidaysInThisMonth;
-std::vector<PCEvent> eventsInNextMonth;
-std::vector<PCEvent> eventsToDisplay;
+int bootCount;
 
 LGFX_Sprite blackSprite;
 LGFX_Sprite redSprite;
 
 void showCalendar();
-void loadICalendar(String urlString, boolean holiday);
 uint32_t readVoltage();
 void logLine(String line);
 void shutdown(int wakeUpSeconds);
@@ -84,6 +81,7 @@ void shutdown(int wakeUpSeconds);
 void setup()
 {
   // put your setup code here, to run once:
+
   blackSprite.setColorDepth(1);
   blackSprite.createSprite(EPD_WIDTH, EPD_HEIGHT);
   blackSprite.setTextWrap(false);
@@ -174,16 +172,38 @@ void setup()
     }
 
     // Load Holidays cache for this month
-    pref.begin("PaperCal", false);
+    pref.begin(prefName, false);
     holidayCacheString = pref.getString(holidayCacheKey, "");
-    Serial.println("Holiday loaded:\n" + holidayCacheString);
+    bootCount = pref.getInt(bootCountKey, 0);
     pref.end();
+
+    // Boot count
+    esp_sleep_wakeup_cause_t wakeupCause = esp_sleep_get_wakeup_cause();
+    switch (wakeupCause)
+    {
+    case ESP_SLEEP_WAKEUP_TIMER:
+    {
+      bootCount++;
+      break;
+    }
+    default:
+    {
+      bootCount = 0;
+    }
+    }
 
     // Prepare voltage
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(VOLTAGE_TEST, OUTPUT);
     pinMode(VOLTAGE_READ, ANALOG);
   }
+
+  // End SD_MMC if log is not enabled
+  if (!LOG_ENABLE)
+  {
+    SD_MMC.end();
+  }
+
   // light sleep wake up source
   esp_sleep_enable_gpio_wakeup();
   gpio_wakeup_enable(GPIO_NUM_17, GPIO_INTR_LOW_LEVEL); // BUSY_PIN
@@ -228,9 +248,8 @@ void showCalendar()
   if (!PCEvent::isCacheValid() && !iCalendarHolidayURL.isEmpty())
   {
     PCEvent::loadICalendar(iCalendarHolidayURL, true);
-    pref.begin("PaperCal", false);
+    pref.begin(prefName, false);
     pref.putString(holidayCacheKey, PCEvent::holidayCacheString());
-    Serial.println("Holiday cached:\n" + PCEvent::holidayCacheString());
     pref.end();
   }
 
@@ -286,9 +305,9 @@ void showCalendar()
     // draw events
     std::vector<PCEvent> eventsInToday;
     auto holidaysInDay = PCEvent::holidaysInDayOfThisMonth(i);
-    eventsInToday.insert(eventsToDisplay.begin(), holidaysInDay.begin(), holidaysInDay.end());
+    eventsInToday.insert(eventsInToday.end(), holidaysInDay.begin(), holidaysInDay.end());
     auto eventsInDay = PCEvent::eventsInDayOfThisMonth(i);
-    eventsInToday.insert(eventsToDisplay.begin(), eventsInDay.begin(), eventsInDay.end());
+    eventsInToday.insert(eventsInToday.end(), eventsInDay.begin(), eventsInDay.end());
 
     blackSprite.setFont(&fonts::SMALL_FONT);
     redSprite.setFont(&fonts::SMALL_FONT);
@@ -313,11 +332,20 @@ void showCalendar()
     redSprite.clearClipRect();
   }
 
-  // Log
+  // Log date
   char logBuffer[32];
   sprintf(logBuffer, "%d/%d/%d %02d:%02d:%02d", year, month, day, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
   String logString = String(logBuffer);
 
+  // Log events
+  logString += ", Events:";
+  logString += String(PCEvent::numberOfEventsInThisMonth());
+
+  // Log boot count
+  logString += ", Boot:";
+  logString += String(bootCount);
+
+  // Log voltage
   if (LOG_VOLTAGE)
   {
     uint32_t voltage = readVoltage();
@@ -325,26 +353,24 @@ void showCalendar()
     logString += String(voltage);
   }
 
-  if (LOG_HOLIDAY)
-  {
-    if (PCEvent::isCacheValid())
-    {
-      logString += ", Holiday cache:valid";
-    }
-    else
-    {
-      logString += ", Holiday cache:invalid";
-    }
-  }
-
+  // Log heap memory size
   if (LOG_HEAP)
   {
     logString += ", Heap:";
     logString += String(esp_get_free_heap_size());
   }
 
+  // Write log if enabled
   if (LOG_ENABLE)
+  {
     logLine(logString);
+    SD_MMC.end();
+  }
+
+  // Save boot count
+  pref.begin(prefName, false);
+  pref.putInt(bootCountKey, bootCount);
+  pref.end();
 
   // Footer
   blackSprite.setFont(&fonts::SMALL_FONT);
@@ -352,17 +378,20 @@ void showCalendar()
   blackSprite.print(logString);
 
   // Display in EPD
-  Epd epd;
-  int initResult = epd.Init();
-  if (initResult != 0)
+  if (EPD_ENABLE)
   {
-    log_printf("e-Paper init failed: %d", initResult);
-    return;
+    Epd epd;
+    int initResult = epd.Init();
+    if (initResult != 0)
+    {
+      log_printf("e-Paper init failed: %d", initResult);
+      return;
+    }
+    epd.Displaypart((unsigned char *)(blackSprite.getBuffer()), 0, 0, EPD_WIDTH, EPD_HEIGHT, 0);
+    epd.Displaypart((unsigned char *)(redSprite.getBuffer()), 0, 0, EPD_WIDTH, EPD_HEIGHT, 1);
+    epd.Sleep();
+    digitalWrite(PWR_PIN, LOW);
   }
-  epd.Displaypart((unsigned char *)(blackSprite.getBuffer()), 0, 0, EPD_WIDTH, EPD_HEIGHT, 0);
-  epd.Displaypart((unsigned char *)(redSprite.getBuffer()), 0, 0, EPD_WIDTH, EPD_HEIGHT, 1);
-  epd.Sleep();
-  digitalWrite(PWR_PIN, LOW);
 
   // Deep sleep (wake up at 0:05)
   loaded = true;
@@ -400,7 +429,6 @@ void logLine(String line)
 void shutdown(int wakeUpSeconds)
 {
   gpio_wakeup_disable(GPIO_NUM_17);
-
   esp_sleep_enable_timer_wakeup(wakeUpSeconds * uS_TO_S_FACTOR);
   esp_deep_sleep_start();
 }

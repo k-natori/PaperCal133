@@ -41,6 +41,7 @@ public:
     static String holidayCacheString();
     static boolean isCacheValid();
     static boolean loadICalendar(String urlString, boolean holiday);
+    static int numberOfEventsInThisMonth();
     static int numberOfEventsInDayOfThisMonth(int day);
     static std::vector<PCEvent> eventsInDayOfThisMonth(int day);
     static int numberOfHolidaysInDayOfThisMonth(int day);

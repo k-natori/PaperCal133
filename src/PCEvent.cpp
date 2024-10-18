@@ -191,7 +191,7 @@ String PCEvent::holidayCacheString()
     result += "\n";
     for (auto it = _holidaysInThisMonth.begin(); it != _holidaysInThisMonth.end(); ++it)
     {
-        const auto& pair = *it;
+        const auto &pair = *it;
         int day = pair.first;
         PCEvent event = pair.second;
         result += day;
@@ -234,6 +234,7 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
             if (stream->available() && chunked)
             {
                 chunkSize = intFrom16BaseString(stream->readStringUntil('\n'));
+                // Serial.printf("first chunk: %ld\n", chunkSize);
             }
 
             while (stream->available())
@@ -241,7 +242,8 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
                 String line = stream->readStringUntil('\n');
                 if (chunked)
                 {
-                    if (line.length() == 0 || line == "\r") {
+                    if (line.length() == 0 || line == "\r")
+                    {
                         continue;
                     }
                     if (isChunkSizeLine)
@@ -259,6 +261,7 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
                         chunkSize += lastLine.length();
 
                         line = lastLine + line;
+                        // Serial.println(line);
 
                         isTrailingLine = false;
                     }
@@ -328,6 +331,11 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
         httpClient.end();
     }
     return false;
+}
+
+int PCEvent::numberOfEventsInThisMonth()
+{
+    return PCEvent::_eventsInThisMonth.size();
 }
 
 int PCEvent::numberOfEventsInDayOfThisMonth(int day)
