@@ -8,6 +8,8 @@
 int dayOfWeek(int year, int month, int day);
 int numberOfDaysInMonth(int year, int month);
 tm tmFromICalDateString(String iCalDateString, float toTimezone);
+tm tmFromHTTPDateString(String httpDateString, float toTimezone);
+tm convertTimezone(tm timeInfo, float toTimezone);
 
 
 class PCEvent
@@ -29,14 +31,15 @@ public:
     boolean isHolidayEvent;
 
     static float defaultTimezone;
+    static tm currentTimeinfo;
     static int currentYear;
     static int currentMonth;
     static int currentDay;
     static int nextMonthYear;
     static int nextMonth;
-    static void initialize(String rootCA, tm timeInfo, String holidayCacheString = "");
+    static void initialize(String rootCA, float timezone, String holidayCacheString = "");
     static void setRootCA(String newRootCA);
-    static void setTimeInfo(tm timeInfo);
+    static void setTimeinfo(tm timeinfo);
     static void setHolidayCacheString(String cacheString);
     static String holidayCacheString();
     static boolean isCacheValid();

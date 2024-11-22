@@ -159,9 +159,6 @@ void setup()
     }
     log_printf("\n");
 
-    // Setup NTP
-    configTime(60 * 60 * PCEvent::defaultTimezone, 0, "ntp.nict.jp", "ntp.jst.mfeed.ad.jp");
-
     // Load PEM file in SD card
     File pemFile = SD_MMC.open(pemFileName.c_str());
     if (pemFile)
@@ -173,7 +170,7 @@ void setup()
 
     // Load Holidays cache for this month
     pref.begin(prefName, false);
-    holidayCacheString = pref.getString(holidayCacheKey, "");
+    PCEvent::setHolidayCacheString(pref.getString(holidayCacheKey, ""));
     bootCount = pref.getInt(bootCountKey, 0);
     pref.end();
 
@@ -223,21 +220,6 @@ void loop()
 void showCalendar()
 {
   digitalWrite(LED_BUILTIN, HIGH);
-  // Get local time
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo))
-  {
-    log_printf("Waiting getLocalTime\n");
-    delay(500);
-    return;
-  }
-
-  PCEvent::setTimeInfo(timeinfo);
-  PCEvent::setHolidayCacheString(holidayCacheString);
-
-  int year = PCEvent::currentYear;
-  int month = PCEvent::currentMonth;
-  int day = PCEvent::currentDay;
 
   // Load iCalendar
   for (auto &urlString : iCalendarURLs)
@@ -254,6 +236,11 @@ void showCalendar()
   }
 
   WiFi.disconnect(true);
+
+  tm timeinfo = PCEvent::currentTimeinfo;
+  int year = PCEvent::currentYear;
+  int month = PCEvent::currentMonth;
+  int day = PCEvent::currentDay;
 
   // Draw calendar
   int firstDayOfWeek = dayOfWeek(year, month, 1);
@@ -397,7 +384,7 @@ void showCalendar()
   loaded = true;
   digitalWrite(LED_BUILTIN, LOW);
   delay(1000);
-  shutdown(24 * 3600 - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec) + 300);
+  shutdown(24 * 3600 - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec) + 600);
 }
 
 uint32_t readVoltage()

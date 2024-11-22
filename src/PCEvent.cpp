@@ -6,6 +6,7 @@
 #include "NJScanner.h"
 
 float PCEvent::defaultTimezone = 0.0f;
+tm PCEvent::currentTimeinfo = {.tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 0, .tm_mon = 0, .tm_year = 0};
 int PCEvent::currentYear = 0;
 int PCEvent::currentMonth = 0;
 int PCEvent::currentDay = 0;
@@ -125,10 +126,10 @@ String PCEvent::getTitle()
 }
 
 // static member functions
-void PCEvent::initialize(String rootCA, tm timeInfo, String holidayCacheString)
+static void initialize(String rootCA, float timezone, String holidayCacheString = "")
 {
     PCEvent::setRootCA(rootCA);
-    PCEvent::setTimeInfo(timeInfo);
+    PCEvent::defaultTimezone = timezone;
     PCEvent::setHolidayCacheString(holidayCacheString);
 }
 
@@ -136,11 +137,12 @@ void PCEvent::setRootCA(String newRootCA)
 {
     PCEvent::_rootCA = newRootCA;
 }
-void PCEvent::setTimeInfo(tm timeInfo)
+void PCEvent::setTimeinfo(tm timeinfo)
 {
-    PCEvent::currentYear = timeInfo.tm_year + 1900;
-    PCEvent::currentMonth = timeInfo.tm_mon + 1;
-    PCEvent::currentDay = timeInfo.tm_mday;
+    PCEvent::currentTimeinfo = timeinfo;
+    PCEvent::currentYear = timeinfo.tm_year + 1900;
+    PCEvent::currentMonth = timeinfo.tm_mon + 1;
+    PCEvent::currentDay = timeinfo.tm_mday;
     if (currentMonth == 12)
     {
         nextMonthYear = PCEvent::currentYear + 1;
@@ -212,8 +214,8 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
     httpClient.begin(urlString, PCEvent::_rootCA.c_str());
     // dateString = "";
 
-    const char *headerKeys[] = {"Transfer-Encoding"};
-    httpClient.collectHeaders(headerKeys, 1);
+    const char *headerKeys[] = {"Transfer-Encoding", "date", "Date"};
+    httpClient.collectHeaders(headerKeys, 3);
 
     int result = httpClient.GET();
     if (result == HTTP_CODE_OK)
@@ -224,7 +226,20 @@ boolean PCEvent::loadICalendar(String urlString, boolean holiday)
         boolean isChunkSizeLine = false;
         boolean isTrailingLine = false;
         String lastLine = "";
-        // dateString = httpClient.header("Date");
+        if (PCEvent::currentYear == 0)
+        {
+            String dateString = httpClient.header("date");
+            if (dateString.isEmpty())
+            {
+                dateString = httpClient.header("Date");
+            }
+            if (!dateString.isEmpty())
+            {
+                tm timeinfo = tmFromHTTPDateString(dateString, defaultTimezone);
+                PCEvent::setTimeinfo(timeinfo);
+            }
+        }
+
         WiFiClient *stream = httpClient.getStreamPtr();
         if (httpClient.connected())
         {
@@ -435,6 +450,28 @@ tm tmFromICalDateString(String iCalDateString, float toTimezone)
     timeInfo.tm_min = (iCalDateString.substring(11, 13)).toInt();
     timeInfo.tm_sec = (iCalDateString.substring(13, 15)).toInt();
 
+    return convertTimezone(timeInfo, toTimezone);
+}
+
+tm tmFromHTTPDateString(String httpDateString, float toTimezone)
+{
+    // Wed, 21 Oct 2015 07:28:00 GMT
+    //      dd MM  YYYY hh mm ss
+    char monthNames[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+    int year, day, hour, min, sec;
+    char buf[5];
+    char monthChars[4] = "Mon";
+    sscanf(httpDateString.c_str(), "%4c %2d %3c %4d %2d:%2d:%2d", buf, &day, monthChars, &year, &hour, &min, &sec);
+    int month = (strstr(monthNames, monthChars) - monthNames) / 3;
+
+    tm timeInfo = {.tm_sec = sec, .tm_min = min, .tm_hour = hour, .tm_mday = day, .tm_mon = month, .tm_year = year - 1900};
+
+    return convertTimezone(timeInfo, toTimezone);
+}
+
+tm convertTimezone(tm timeInfo, float toTimezone)
+{
     // Convert timezone
     if (toTimezone != 0.0f)
     {
